@@ -1,12 +1,19 @@
 "use strict";
-const double = (num) => {
-    if (num === undefined) {
-        return 0;
-    }
-    else {
-        return num * 2;
-    }
+function isPropertyAccessible(value) {
+    return value != null;
+}
+function isHuman(value) {
+    // 以下はダメ.「{ }のときnameプロパティにアクセスできません」になる
+    // if(value == null) return false
+    if (!isPropertyAccessible(value))
+        return false;
+    return (typeof value.name === "string" && typeof value.age === "number");
+}
+const getName = (animal) => {
+    if (isHuman(animal))
+        return animal.name;
+    return "NoName";
 };
-console.log(double(undefined));
-console.log(double(123));
-console.log("aa".repeat(2));
+const human = { name: "masa", age: 10 };
+const str = getName(human);
+console.log(str);
