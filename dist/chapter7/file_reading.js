@@ -13,4 +13,3 @@ fs.readFile(target_path, 'utf8', (err, data) => {
         console.log(uhyo_count);
     }
 });
-console.log(url.fileURLToPath(import.meta.url));

@@ -14,4 +14,7 @@ fs.readFile(target_path, 'utf8', (err, data) => {
   }
 })
 
+console.log("確認用")
+console.log(import.meta.url)
 console.log(url.fileURLToPath(import.meta.url))
+console.log(path.dirname(url.fileURLToPath(import.meta.url)))
