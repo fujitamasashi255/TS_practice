@@ -1,14 +1,174 @@
-version: "3"
+# version: 3.9
+
+# 拡張フィールドを使って、共通の設定を定義する
+# context:
+#   contextディレクトリは、Dockerで使うビルドコンテキストを定義するもので、
+#   ビルドプロセス（COPYコマンドを実行するなど）で使われる一種のワーキングディレクトリのようなものです。
+#   contextディレクトリは、イメージをビルドするたびにパッケージ化されてDockerデーモンに送信されるので、
+#   なるべく小さく保つ方がよいでしょう
+# image:タグの指定
+#   Dockerを開発に使うメリットのひとつは、設定を変更すればチーム内で自動的に同期できることです。
+#   つまり、1.0.0のようなローカルイメージのバージョン番号は、イメージそのもの（またはイメージが依存する引数）を更新したときだけ更新が必要です。
+#   よくあるexample-dev:latestのようなうかつな設定はくれぐれも使わないでください。
+#   イメージのバージョン番号をタグで指定して管理しておくことで、異なる環境で作業するときも余分な作業を強いられずに済むようになります。
+#   たとえば"chore/upgrade-to-ruby-3"ブランチで長時間作業している最中でも、イメージのバージョン番号を適切に更新しておけば、
+#   いつでもmainブランチにさっと切り替えて古いイメージやRubyを使えるようになります。これならリビルドは一切不要です。
+# 経験則: Dockerfileやその引数を更新する場合（依存関係を更新する場合など）は、必ずその都度イメージタグのバージョン番号を更新すること。
+# environment:
+#   ・構文：X=${X:-デフォルト値}
+#     これは「コンテナ内の変数Xについて、ホストマシンに環境変数Xが存在すればその値を使い、存在しなければ指定のデフォルト値を使う」という意味。
+#     これを活用すれば、RAILS_ENV=test docker-compose up railsのようにコマンドで別の環境を指定してサービスを実行できるようになります。
+#   ・environmentフィールドでは値をリスト形式（- NODE_ENV=xxx）ではなく、辞書形式（NODE_ENV: xxx）で記述している
+#     この書式にすることで、共通設定を使い回せるようになります（後述）。
+# tmpfs:
+#   コンテナ内の/tmp（およびアプリケーションのtmp/pids）にtmpfsを利用するようDockerに指示しています
+#   tmpfsフィールドは、コンテナ内の一時ファイルをホストマシンのメモリ上に置くことができます。
+#   これにより、コンテナ内の一時ファイルがホストマシンのディスクに書き込まれることを防ぐことができます。
+#   こうすることで、コンテナ終了時にserver.pidが残らなくなり、いまいましい"A server is already running"エラーとおさらばできます。
+x-app: &app
+  build:
+    context: .
+    args:
+      RUBY_VERSION: '3.2.2'
+      NODE_MAJOR: '20'
+      YARN_VERSION: '1.22.17'
+  image: example-dev:1.0.0
+  environment: &env
+    NODE_ENV: ${NODE_ENV:-development}
+    RAILS_ENV: ${RAILS_ENV:-development}
+  tmpfs:
+    - /tmp
+    - /app/tmp/pids
+
+# 拡張フィールドを使って、共通の設定を定義する
+# x-backendサービスは、すべてのRubyサービスに共通する振る舞いを定義します。
+# （注）記事ではcompose.ymlは（通常と異なり）.dockerdev/フォルダの下に置くようにしている。
+#      これが、このcompose.ymlファイルでソースコードを.:/appではなく..:/appでマウントしている理由です。
+# volumes:
+#   ・「.:/app:cached」: プロジェクトのルートディレクトリをコンテナ内の/appにマウントします。
+#   ・「bundle:/usr/local/bundle」:
+#      gemをコンテナ内の/usr/local/bundleにマウントします。
+#      こうすることで、gemデータが永続化されてどの実行でも使われるようになります。
+#      compose.ymlで定義したすべてのボリュームは、compose down --volumesを実行するまで維持されます。
+#   ・以降の4行
+#      「DockerがMacで遅い」という呪いをお祓いするためにわざわざ配置されています。
+#       生成されたファイルをすべてDockerボリュームに保存して、ホストマシンのディスク操作が重くならないようにしています。
+#   ・DockerをmacOS上で十分高速化するには、次の2つのルールを守ること。
+#     (1)ソースファイルをマウントするときは:cachedを指定し（gRPC FUSEを使わない場合）、
+#     (2)生成されたコンテンツ（アセットやバンドルなど）はボリュームに保存すること。
+#        (例)SprocketsやPropshaftを使う場合は、専用ボリューム（assets:/app/public/assets）を追加してそこにアセットを保存する。
+#            tailwindcss-railsの場合はassets_builds:/app/assets/buildsのように追加する。
+#    ・最後の3行: さまざまなコマンドラインツールの設定ファイルや履歴を永続化するボリュームをマウントします。
+x-backend: &backend
+  <<: *app
+  stdin_open: true
+  tty: true
+  volumes:
+    - .:/app:cached
+    - bundle:/usr/local/bundle
+    - rails_cache:/app/tmp/caches
+    - node_modules:/app/node_modules
+    # - packs:/app/public/packs
+    # - packs-test:/app/public/packs-test
+    - history:/usr/local/hist
+    # - ./.psqlrc:/root/.psqlrc:ro
+    # - ./.bashrc:/root/.bashrc:ro ← ./.bashrcを作成する必要がある
+  environment: &backend_environment
+    # <<: *envで共通の環境変数から変数を「継承」しています。
+    <<: *env
+    # Rubyアプリケーションを他のサービスに接続
+    # REDIS_URL: redis://redis:6379/
+    # DATABASE_URL: postgres://postgres:postgres@postgres:5432
+    # WEBPACKER_DEV_SERVER_HOST: webpacker
+    # アプリケーションの設定
+    MALLOC_ARENA_MAX: 2
+    WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+    # Dockerボリュームにキャッシュを保存する変数
+    # gem bootsnapはアプリケーションの読み込み時間を短縮するのに使われます。
+    BOOTSNAP_CACHE_DIR: /usr/local/bundle/_bootsnap
+    XDG_DATA_HOME: /app/tmp/caches
+    YARN_CACHE_FOLDER: /app/node_modules/.yarn-cache
+    # Bashの履歴の保存場所を指定して、履歴が消えないようにします。
+    HISTFILE: /usr/local/hist/.bash_history
+    # PSQL_HISTFILE: /usr/local/hist/.psql_history
+    # IRB_HISTFILE: /usr/local/hist/.irb_history
+    # rails credentials:editコマンドでcredentialファイルを管理するときなどに使われます。
+    EDITOR: vi
+  # depends_on: &backend_depends_on
+  #   postgres:
+  #     condition: service_healthy
+  #   redis:
+  #     condition: service_healthy
 
 services:
-  node:
-    image: node:latest
-    tty: true
-    stdin_open: true
-    working_dir: /app
-    volumes:
-      - .:/app
-      - node_modules:/app/node_modules
+  ruby:
+    <<: *backend
+    # command: bundle exec rails
+
+  # web:
+  #   <<: *backend
+  #   command: bundle exec rails server -b 0.0.0.0
+  #   ports:
+  #     - '3000:3000'
+  #   depends_on:
+  #     webpacker:
+  #       condition: service_started
+  #     sidekiq:
+  #       condition: service_started
+
+  # sidekiq:
+  #   <<: *backend
+  #   command: bundle exec sidekiq -C config/sidekiq.yml
+
+  # postgres:
+  #   image: postgres:14
+  #   volumes:
+  #     - .psqlrc:/root/.psqlrc:ro
+  #     - postgres:/var/lib/postgresql/data
+  #     - history:/user/local/hist
+  #   environment:
+  #     PSQL_HISTFILE: /user/local/hist/.psql_history
+  #     POSTGRES_PASSWORD: postgres
+  #   ports:
+  #     - 5432
+  #   healthcheck:
+  #     test: pg_isready -U postgres -h 127.0.0.1
+  #     interval: 5s
+
+  # redis:
+  #   image: redis:6.2-alpine
+  #   volumes:
+  #     - redis:/data
+  #   ports:
+  #     - 6379
+  #   healthcheck:
+  #     test: redis-cli ping
+  #     interval: 1s
+  #     timeout: 3s
+  #     retries: 30
+
+  # webpacker:
+  #   <<: *app
+  #   command: bundle exec ./bin/webpack-dev-server
+  #   ports:
+  #     - '3035:3035'
+  #   volumes:
+  #     - ..:/app:cached
+  #     - bundle:/usr/local/bundle
+  #     - node_modules:/app/node_modules
+  #     - packs:/app/public/packs
+  #     - packs-test:/app/public/packs-test
+  #   environment:
+  #     <<: *env
+  #     WEBPACKER_DEV_SERVER_HOST: 0.0.0.0
+  #     YARN_CACHE_FOLDER: /app/node_modules/.yarn-cache
 
 volumes:
+  bundle:
   node_modules:
+  history:
+  rails_cache:
+  # postgres:
+  # redis:
+  # packs:
+  # packs-test:

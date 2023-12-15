@@ -1,0 +1,33 @@
+table {
+    border-collapse: collapse;
+    margin: 0 auto;
+    background-color: green;
+}
+
+td {
+    text-align: center;
+    vertical-align: top;
+    width: 50px;
+    height: 50px;
+    border: solid 1px black;
+}
+
+.piece {
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    margin: 5px;
+}
+
+.black {
+    background-color: black;
+}
+
+.white {
+    background-color: white;
+    border: solid 1px black;
+}
+
+.none {
+    background-color: transparent;
+}
