@@ -1,0 +1,27 @@
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="index.css">
+</head>
+
+<body>
+    <h1>オセロゲーム</h1>
+    <table>
+        <%(1..9).each do |i| %>
+            <tr id="row<%= i %>">
+                <td id="cell<%= i %>1"><div class="piece none"></div></td>
+                <td id="cell<%= i %>2"><div class="piece none"></div></td>
+                <td id="cell<%= i %>3"><div class="piece none"></div></td>
+                <td id="cell<%= i %>4"><div class="piece none"></div></td>
+                <td id="cell<%= i %>5"><div class="piece none"></div></td>
+                <td id="cell<%= i %>6"><div class="piece none"></div></td>
+                <td id="cell<%= i %>7"><div class="piece none"></div></td>
+                <td id="cell<%= i %>8"><div class="piece none"></div></td>
+                <td id="cell<%= i %>9"><div class="piece none"></div></td>
+            </tr>
+        <% end %>
+    </table>
+    <button id="start-game">ゲームを始める</button>
+    <script src="/dist/Othello/index.js" async></script>
+</body>
